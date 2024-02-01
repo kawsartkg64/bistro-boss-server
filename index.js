@@ -28,6 +28,7 @@ async function run() {
     const menuCollection = client.db('BistrobossDB').collection('menu')
     const reviewCollection = client.db('BistrobossDB').collection('review')
     const cartCollection = client.db('BistrobossDB').collection('Cart')
+    const userCollection = client.db('BistrobossDB').collection('user')
 
 
     app.get('/menu', async(req, res)=>{
@@ -40,8 +41,47 @@ async function run() {
         const result = await reviewCollection.find().toArray()
         res.send(result)
     })
+    // user admin api
+    app.patch('/users/admin/:id', async(req,res)=>{
+      const id = req.params.id;
+      const query ={_id: new ObjectId(id)};
+      const updateDoc ={
+        $set:{
+          role:"admin"
+        }
+      }
+      const result = await userCollection.updateOne(query, updateDoc)
+      res.send(result)
+    })
+
+    // user Collection
+    app.get('/users', async(req, res)=>{
+      const result = await userCollection.find().toArray()
+      res.send(result)
+        })
+
+    app.post('/users', async(req, res)=>{
+      const user = req.body;
+      const query = {email: user.email}
+      const existingUser = await userCollection.findOne(query)
+      if(existingUser){
+        return res.send({message: 'User Already Exist', insertedId:null})
+      }
+      const result= await userCollection.insertOne(user)
+      res.send(result)
+    })
+    app.delete('/users/:id', async (req, res)=>{
+      const id = req.params.id
+      const query ={_id: new ObjectId(id)};
+      const result = await userCollection.deleteOne(query)
+      res.send(result)
+    })
+
+
+
 
     // cart collection
+
     app.get('/carts', async(req, res)=>{
       const email = req.query.email;
       const query = {email:email}
@@ -67,8 +107,7 @@ async function run() {
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
-    // Ensures that the client will close when you finish/error
-    // await client.close();
+    
   }
 }
 run().catch(console.dir);
