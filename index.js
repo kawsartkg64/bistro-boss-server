@@ -1,7 +1,8 @@
+require('dotenv').config()
 const express = require('express');
 const cors = require('cors')
 const jwt = require('jsonwebtoken')
-require('dotenv').config()
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY)
 const app = express()
 const port = process.env.PORT || 5000
 
@@ -32,6 +33,9 @@ async function run() {
     const reviewCollection = client.db('BistrobossDB').collection('review')
     const cartCollection = client.db('BistrobossDB').collection('Cart')
     const userCollection = client.db('BistrobossDB').collection('user')
+    const paymentCollection = client.db('BistrobossDB').collection('payment')
+
+
 
     // middleware verify token api
     const verifyToken = (req, res, next) => {
@@ -90,10 +94,48 @@ async function run() {
     // jwt related api
     app.post('/jwt', async (req, res) => {
       const user = req.body;
-      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' })
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '2h' })
       res.send({ token })
     })
 
+    // payment
+    app.get('/payments/:email', verifyToken, async(req,res)=>{
+        const query ={email: req.params.email};
+        if(req.params.email !== req.decoded.email){
+          return res.status(403).send({message: 'forbidden access'})
+        }
+        const result = await paymentCollection.find(query).toArray();
+        res.send(result)
+    })
+
+
+    app.post('/payments', async(req, res)=>{
+      const payment = req.body;
+      const paymentResult = await paymentCollection.insertOne(payment)
+      const query = {_id: {
+        $in: payment.cartId.map(id => new ObjectId(id))
+      }}
+      const deleteResult = await cartCollection.deleteMany(query)
+      res.send({paymentResult, deleteResult})
+    })
+
+    // payment intent
+    app.post('/create-payment-intent', async(req, res)=>{
+      const {price} = req.body;
+      const amount = parseFloat(price)*100;
+      console.log(amount)
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount:amount,
+        currency:'usd',
+        payment_method_types:['card']
+      })
+      console.log(paymentIntent)
+      res.send(
+        {
+          clientSecret: paymentIntent.client_secret
+        }
+      )
+    })
     // admin related api
     app.get('/users/admin/:email', verifyToken, async (req, res) => {
       const email = req.params.email;
