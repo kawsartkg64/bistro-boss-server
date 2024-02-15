@@ -121,8 +121,8 @@ async function run() {
 
     // payment intent
     app.post('/create-payment-intent', async(req, res)=>{
-      const {price} = req.body;
-      const amount = parseFloat(price)*100;
+      const { price } = req.body;
+      const amount = parseInt(price * 100);
       console.log(amount)
       const paymentIntent = await stripe.paymentIntents.create({
         amount:amount,
@@ -135,6 +135,74 @@ async function run() {
           clientSecret: paymentIntent.client_secret
         }
       )
+    })
+
+
+
+    app.get('/order-stats', verifyToken, verifyAdmin, async(req,res)=>{
+     const result = await paymentCollection.aggregate([
+     {$unwind: { path: "$menuId" }},
+      {
+        $lookup: {
+         
+          from: 'menu',
+          let: { menuId: { $toObjectId: "$menuId" } },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$_id", "$$menuId"] }
+              }
+            }
+          ],
+          
+          as:"menuDetail"
+        }
+      },
+      { $unwind:  { path: "$menuDetail" }},
+      {
+        $group: {
+          _id: '$menuDetail.category',
+          quantity:{$sum:1},
+          totalRevenue:{
+            $sum: "$menuDetail.price"
+          }
+        }
+      },
+      {$project: {
+        _id:0,
+        category: '$_id',
+        quantity: '$quantity',
+        revenue: '$totalRevenue'
+      }}
+     ]).toArray()
+     res.send(result)
+    })
+
+
+    app.get('/admin-stats', async(req,res)=>{
+      const user = await userCollection.estimatedDocumentCount()
+      const menuItem = await menuCollection.estimatedDocumentCount();
+      const order = await paymentCollection.estimatedDocumentCount();
+      // const payments = await paymentCollection.find().toArray()
+      // const revenue = payments.reduce((total, item)=> total+item.price, 0)
+
+      const result = await paymentCollection.aggregate([
+        { $group:{
+          _id:null,
+          totalRevenue:{
+            $sum : '$price'
+          }
+        }}
+      ]).toArray()
+      const revenue = result.length > 0 ? result[0].totalRevenue:0;
+
+      res.send({
+        user,
+        menuItem,
+        order,
+        revenue,
+       
+      })
     })
     // admin related api
     app.get('/users/admin/:email', verifyToken, async (req, res) => {
